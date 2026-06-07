@@ -288,6 +288,24 @@ app.get('/api/history/:userId', (req, res) => {
   }
 });
 
+// Rastreamento de conexões ativas por usuário (userId -> Set de socket.ids)
+const activeConnections = new Map();
+
+function notifyPartnerStatus(userId, isOnline) {
+  try {
+    const getUser = db.prepare('SELECT paired_user_id FROM users WHERE id = ?');
+    const user = getUser.get(userId);
+    if (user && user.paired_user_id) {
+      io.to(user.paired_user_id).emit('partner-status-change', {
+        userId,
+        online: isOnline
+      });
+    }
+  } catch (err) {
+    console.error('Erro ao notificar status do parceiro:', err);
+  }
+}
+
 // Socket.io Real-Time
 io.on('connection', (socket) => {
   console.log(`Dispositivo conectado: ${socket.id}`);
@@ -299,6 +317,15 @@ io.on('connection', (socket) => {
     currentUserId = userId;
     socket.join(userId);
     console.log(`Usuário ${userId} entrou na sala WebSocket correspondente.`);
+    
+    // Rastrear conexões ativas
+    if (!activeConnections.has(userId)) {
+      activeConnections.set(userId, new Set());
+    }
+    activeConnections.get(userId).add(socket.id);
+    
+    // Notificar parceiro que está online
+    notifyPartnerStatus(userId, true);
   });
 
   // Atualização de localização recebida
@@ -373,6 +400,17 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     console.log(`Dispositivo desconectado: ${socket.id}`);
+    
+    if (currentUserId && activeConnections.has(currentUserId)) {
+      const sockets = activeConnections.get(currentUserId);
+      sockets.delete(socket.id);
+      
+      // Se não houver mais conexões ativas para este usuário, ele está realmente offline
+      if (sockets.size === 0) {
+        activeConnections.delete(currentUserId);
+        notifyPartnerStatus(currentUserId, false);
+      }
+    }
   });
 });
 

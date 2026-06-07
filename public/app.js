@@ -73,6 +73,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initMap();
   setupEventListeners();
   setupPWA();
+  requestNotificationPermission();
   
   const savedUserId = localStorage.getItem('userId');
   if (savedUserId) {
@@ -111,6 +112,7 @@ async function loginUser(userId) {
     
     const user = await response.json();
     state.user = user;
+    localStorage.setItem('cached_user', JSON.stringify(user));
     
     updateSelfUI();
     initSocket();
@@ -124,6 +126,14 @@ async function loginUser(userId) {
     if (cachedUser) {
       state.user = JSON.parse(cachedUser);
       updateSelfUI();
+      
+      const cachedPartner = localStorage.getItem('cached_partner');
+      if (cachedPartner) {
+        state.partner = JSON.parse(cachedPartner);
+        state.partnerOnline = false;
+        updatePartnerUI();
+      }
+      
       startLocationTracking();
       alert('Conectado em modo offline. As atualizações em tempo real iniciarão quando a internet retornar.');
     }
@@ -243,6 +253,13 @@ async function fetchCircleDetails() {
     state.user = data.user;
     state.partner = data.partner;
 
+    localStorage.setItem('cached_user', JSON.stringify(data.user));
+    if (data.partner) {
+      localStorage.setItem('cached_partner', JSON.stringify(data.partner));
+    } else {
+      localStorage.removeItem('cached_partner');
+    }
+
     updateSelfUI();
     updatePartnerUI();
     
@@ -339,6 +356,13 @@ function initSocket() {
     
     // Adicionar ponto ao histórico da rota em tempo real
     addPointToRoute('partner', [data.latitude, data.longitude]);
+  });
+
+  // Recebe alteração de status online/offline do parceiro
+  state.socket.on('partner-status-change', (data) => {
+    if (!state.partner || data.userId !== state.partner.id) return;
+    state.partnerOnline = data.online;
+    updatePartnerUI();
   });
 
   // Recebe SOS
@@ -629,6 +653,15 @@ function showSOSAlert(senderName, message) {
     beeps++;
     if (beeps >= 8) clearInterval(beepInterval);
   }, 600);
+
+  // Dispara notificação nativa do sistema se houver permissão
+  if ('Notification' in window && Notification.permission === 'granted') {
+    new Notification(`🚨 ALERTA SOS: ${senderName}`, {
+      body: message,
+      icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png',
+      tag: 'sos-alert'
+    });
+  }
 }
 
 function playEmergencyBeep() {
@@ -910,4 +943,12 @@ function setupPWA() {
       deferredPrompt = null;
     });
   });
+}
+
+function requestNotificationPermission() {
+  if ('Notification' in window) {
+    Notification.requestPermission().then(permission => {
+      console.log('Permissão de Notificação:', permission);
+    });
+  }
 }
