@@ -24,7 +24,8 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Inicialização do Banco de Dados SQLite (Nativo do Node.js)
-const db = new DatabaseSync(path.join(__dirname, 'database.db'));
+const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'database.db');
+const db = new DatabaseSync(dbPath);
 
 // Criar tabelas se não existirem
 db.exec(`
