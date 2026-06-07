@@ -1,0 +1,15 @@
+{
+  "name": "24happ",
+  "version": "1.0.0",
+  "description": "App de rastreamento de localização em tempo real estilo Life360",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
+  }
+}

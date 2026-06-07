@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>24hApp - Monitoramento em Tempo Real</title>
+  
+  <!-- PWA configurations -->
+  <link rel="manifest" href="/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="https://cdn-icons-png.flaticon.com/512/854/854878.png">
+
+  <!-- Google Fonts & Leaflet -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <!-- CSS -->
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+  <!-- SOS/Alert Overlay -->
+  <div id="sos-banner" class="sos-banner hidden">
+    <div class="sos-banner-content">
+      <div class="sos-icon-pulse">🆘</div>
+      <div class="sos-info">
+        <h4 id="sos-title">ALERTA DE EMERGÊNCIA</h4>
+        <p id="sos-message">Seu parceiro precisa de ajuda!</p>
+      </div>
+      <button id="close-sos-btn" class="close-sos-btn">OK</button>
+    </div>
+  </div>
+
+  <!-- Main Container -->
+  <main id="app-container">
+    
+    <!-- Top Floating Header -->
+    <header class="app-header">
+      <div class="header-logo">
+        <span class="pulsing-dot"></span>
+        <h1>24h<span>App</span></h1>
+      </div>
+      <div class="header-actions">
+        <button id="pwa-install-btn" class="header-btn hidden" title="Instalar Aplicativo">
+          📥 Instalar
+        </button>
+        <button id="help-btn" class="header-btn" title="Ajuda 24h Background">
+          ❓ Ajuda 24h
+        </button>
+      </div>
+    </header>
+
+    <!-- Map Area -->
+    <section id="map-container">
+      <div id="map"></div>
+    </section>
+
+    <!-- Slide-up Bottom Sheet -->
+    <div id="bottom-sheet" class="bottom-sheet collapsed">
+      <div class="drag-handle-container" id="drag-handle-trigger">
+        <div class="drag-handle"></div>
+      </div>
+      
+      <div class="bottom-sheet-content">
+        <!-- Circle Dashboard (Membros) -->
+        <div class="section-title">
+          <h2>Seu Círculo</h2>
+          <span class="circle-badge">2 Pessoas</span>
+        </div>
+
+        <div class="users-grid">
+          <!-- Card Usuário Atual -->
+          <div class="user-card self" id="user-card-self">
+            <div class="avatar-wrapper">
+              <img id="self-avatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=user1" alt="Avatar">
+              <span class="status-indicator online"></span>
+            </div>
+            <div class="user-details">
+              <h3 id="self-name">Você</h3>
+              <p class="user-status-msg" id="self-status-msg">Atualizando...</p>
+              <div class="user-meta">
+                <span class="battery-indicator" id="self-battery">🔋 --%</span>
+                <span class="speed-indicator" id="self-speed">🚗 0 km/h</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card Parceiro -->
+          <div class="user-card partner empty" id="user-card-partner">
+            <!-- Caso não esteja pareado -->
+            <div class="unpaired-state" id="unpaired-view">
+              <div class="unpaired-icon">🔗</div>
+              <p>Nenhum parceiro pareado ainda</p>
+              <button id="open-pair-modal-btn" class="btn btn-secondary btn-sm">Conectar</button>
+            </div>
+            
+            <!-- Caso esteja pareado -->
+            <div class="paired-state hidden" id="paired-view">
+              <div class="avatar-wrapper">
+                <img id="partner-avatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=user2" alt="Avatar">
+                <span class="status-indicator" id="partner-online-indicator"></span>
+              </div>
+              <div class="user-details">
+                <h3 id="partner-name">Carregando...</h3>
+                <p class="user-status-msg" id="partner-status-msg">Sem atualizações</p>
+                <div class="user-meta">
+                  <span class="battery-indicator" id="partner-battery">🔋 --%</span>
+                  <span class="speed-indicator" id="partner-speed">🚗 0 km/h</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Status Picker -->
+        <div class="action-section">
+          <h3>Qual o seu status?</h3>
+          <div class="status-options">
+            <button class="status-btn" data-emoji="🏠" data-text="Em Casa">🏠 Casa</button>
+            <button class="status-btn" data-emoji="🏫" data-text="Trabalho/Escola">🏫 Trabalho</button>
+            <button class="status-btn" data-emoji="🚗" data-text="Em Trânsito">🚗 Trânsito</button>
+            <button class="status-btn" data-emoji="🔋" data-text="Bateria Fraca">🔋 Bat. Baixa</button>
+            <button class="status-btn" data-emoji="🍕" data-text="Lanchando">🍕 Comendo</button>
+          </div>
+        </div>
+
+        <!-- SOS Call out -->
+        <div class="sos-section">
+          <button id="sos-trigger-btn" class="btn btn-danger btn-block btn-lg pulse-danger">
+            🚨 ENVIAR SOS EMERGENCIAL
+          </button>
+        </div>
+
+        <!-- Meus Locais -->
+        <div class="places-section">
+          <div class="settings-header">
+            <h3>Meus Locais</h3>
+          </div>
+          <div class="quick-places">
+            <button class="quick-place-btn" data-icon="🏠" data-name="Casa">🏠 Casa</button>
+            <button class="quick-place-btn" data-icon="💼" data-name="Trabalho">💼 Trabalho</button>
+            <button class="quick-place-btn" data-icon="🏫" data-name="Escola">🏫 Escola</button>
+            <button class="quick-place-btn" data-icon="🏥" data-name="Médico">🏥 Médico</button>
+            <button class="quick-place-btn" data-icon="🏋️" data-name="Academia">🏋️ Academia</button>
+            <button class="quick-place-btn" data-icon="📍" data-name="Outro">📍 Outro</button>
+          </div>
+          <div id="places-list" class="places-list"></div>
+        </div>
+
+        <!-- Settings & Connections Tab -->
+        <div class="settings-section">
+          <div class="settings-header">
+            <h3>Configurações do Círculo</h3>
+          </div>
+          
+          <div class="pairing-box">
+            <p class="pairing-desc">Compartilhe seu código com seu parceiro ou insira o dele abaixo.</p>
+            <div class="code-display-container">
+              <span class="label">Seu Código:</span>
+              <div class="code-box">
+                <strong id="my-pairing-code">------</strong>
+                <button id="copy-code-btn" class="copy-btn" title="Copiar Código">📋</button>
+              </div>
+            </div>
+            
+            <div class="code-input-container" id="input-pairing-container">
+              <input type="text" id="partner-code-input" placeholder="Ex: A8F9X2" maxlength="6" autocomplete="off" autocorrect="off" spellcheck="false" inputmode="text">
+              <button id="pair-btn" class="btn btn-primary">Conectar</button>
+            </div>
+            
+            <div class="disconnect-container hidden" id="disconnect-view">
+              <button id="unpair-btn" class="btn btn-outline-danger btn-block btn-sm">Desconectar do Parceiro</button>
+            </div>
+          </div>
+
+          <!-- PWA Status & Wake Lock -->
+          <div class="toggle-card">
+            <div class="toggle-info">
+              <h4>Modo Wake Lock (Tela Ativa)</h4>
+              <p>Evita que o celular durma para monitorar continuamente.</p>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="wake-lock-toggle">
+              <span class="slider round"></span>
+            </label>
+          </div>
+
+          <div class="toggle-card">
+            <div class="toggle-info">
+              <h4>Geolocalização Contínua</h4>
+              <p>Manter rastreamento ativo em alta precisão.</p>
+            </div>
+            <div class="status-badge active" id="gps-status-badge">Ativo</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Welcome / Register Profile Modal -->
+  <div id="register-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Bem-vindo ao 24hApp</h2>
+        <p>Crie seu perfil rápido de compartilhamento</p>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="username-input">Seu Nome / Apelido</label>
+          <input type="text" id="username-input" placeholder="Ex: Gabriel, Mãe, Amor" required>
+        </div>
+        
+        <label>Escolha seu Avatar</label>
+        <div class="avatar-select-grid">
+          <div class="avatar-option selected" data-seed="cool-fox">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=cool-fox" alt="Fox">
+          </div>
+          <div class="avatar-option" data-seed="funny-cat">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=funny-cat" alt="Cat">
+          </div>
+          <div class="avatar-option" data-seed="happy-panda">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=happy-panda" alt="Panda">
+          </div>
+          <div class="avatar-option" data-seed="smart-owl">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=smart-owl" alt="Owl">
+          </div>
+          <div class="avatar-option" data-seed="ninja-rabbit">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=ninja-rabbit" alt="Rabbit">
+          </div>
+          <div class="avatar-option" data-seed="retro-robot">
+            <img src="https://api.dicebear.com/7.x/bottts/svg?seed=retro-robot" alt="Robot">
+          </div>
+        </div>
+
+        <button id="save-profile-btn" class="btn btn-primary btn-block btn-lg">Começar a Rastrear</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Help / Background Guide Modal -->
+  <div id="help-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2>Como funcionar 24h por dia?</h2>
+        <p>Devido a restrições de economia de bateria dos celulares, siga estas etapas:</p>
+      </div>
+      <div class="modal-body help-body">
+        <div class="help-step">
+          <span class="step-num">1</span>
+          <div>
+            <strong>Instale o Aplicativo:</strong>
+            <p>Clique no botão 📥 Instalar ou selecione "Adicionar à Tela de Início" no navegador. O PWA possui maior prioridade em segundo plano.</p>
+          </div>
+        </div>
+        <div class="help-step">
+          <span class="step-num">2</span>
+          <div>
+            <strong>Android (Sem Restrições):</strong>
+            <p>Pressione e segure o ícone do app na tela inicial -> Info do App -> Bateria -> Mude para "Sem restrições" ou "Não otimizado".</p>
+          </div>
+        </div>
+        <div class="help-step">
+          <span class="step-num">3</span>
+          <div>
+            <strong>iOS/iPhone (Serviços de Localização):</strong>
+            <p>Acesse Ajustes -> Safari / 24hApp -> Localização -> Mude para "Permitir Sempre" (caso disponível) e ative a "Atualização em 2º Plano".</p>
+          </div>
+        </div>
+        <div class="help-step">
+          <span class="step-num">4</span>
+          <div>
+            <strong>Mantenha a Tela Ativa:</strong>
+            <p>Se estiver dirigindo ou em uma viagem importante, ative o "Modo Wake Lock" na parte inferior para que o mapa não desligue.</p>
+          </div>
+        </div>
+        
+        <button id="close-help-btn" class="btn btn-secondary btn-block">Entendi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- JS Scripts -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
