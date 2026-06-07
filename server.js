@@ -1,12 +1,13 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
-import { DatabaseSync } from 'node:sqlite';
+import pg from 'pg';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 import os from 'os';
 
+const { Pool } = pg;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -23,66 +24,89 @@ const io = new Server(httpServer, {
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Inicialização do Banco de Dados SQLite (Nativo do Node.js)
-const dbPath = process.env.DATABASE_PATH || path.join(__dirname, 'database.db');
-const db = new DatabaseSync(dbPath);
+// Inicialização do Pool do PostgreSQL (Supabase / Neon)
+const connectionString = process.env.DATABASE_URL;
 
-// Criar tabelas se não existirem
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    username TEXT NOT NULL,
-    avatar TEXT,
-    pairing_code TEXT UNIQUE NOT NULL,
-    paired_user_id TEXT
-  );
-  
-  CREATE TABLE IF NOT EXISTS places (
-    id TEXT PRIMARY KEY,
-    user_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    icon TEXT NOT NULL DEFAULT '📍',
-    lat REAL NOT NULL,
-    lng REAL NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
+if (!connectionString) {
+  console.error('❌ ERRO CRÍTICO: A variável de ambiente DATABASE_URL não foi definida.');
+  console.log('----------------------------------------------------------------------');
+  console.log('Para testar localmente conectando ao Supabase, execute no terminal:');
+  console.log('PowerShell: $env:DATABASE_URL="sua-url-de-conexao-do-supabase"');
+  console.log('CMD/Windows: set DATABASE_URL="sua-url-de-conexao-do-supabase"');
+  console.log('Linux/macOS: export DATABASE_URL="sua-url-de-conexao-do-supabase"');
+  console.log('----------------------------------------------------------------------');
+}
 
-  CREATE TABLE IF NOT EXISTS locations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT NOT NULL,
-    latitude REAL NOT NULL,
-    longitude REAL NOT NULL,
-    battery_level REAL,
-    charging INTEGER,
-    speed REAL,
-    accuracy REAL,
-    status_msg TEXT,
-    timestamp INTEGER NOT NULL,
-    FOREIGN KEY(user_id) REFERENCES users(id)
-  );
-`);
+const pool = new Pool({
+  connectionString: connectionString,
+  ssl: connectionString ? { rejectUnauthorized: false } : false
+});
+
+// Criar tabelas se não existirem no PostgreSQL
+async function initDatabase() {
+  if (!connectionString) return;
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        avatar TEXT,
+        pairing_code TEXT UNIQUE NOT NULL,
+        paired_user_id TEXT
+      );
+      
+      CREATE TABLE IF NOT EXISTS places (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        icon TEXT NOT NULL DEFAULT '📍',
+        lat REAL NOT NULL,
+        lng REAL NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS locations (
+        id SERIAL PRIMARY KEY,
+        user_id TEXT NOT NULL,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        battery_level REAL,
+        charging INTEGER,
+        speed REAL,
+        accuracy REAL,
+        status_msg TEXT,
+        timestamp BIGINT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+    `);
+    console.log('✅ Banco de dados PostgreSQL (Supabase) inicializado com sucesso.');
+  } catch (err) {
+    console.error('❌ Erro ao inicializar tabelas no banco de dados:', err);
+  }
+}
+initDatabase();
 
 // Helper para gerar código de pareamento único de 6 caracteres (ex: A8F9X2)
-function generatePairingCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // Evita caracteres confusos como O, 0, I, 1
+async function generatePairingCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
-  const selectQuery = db.prepare('SELECT 1 FROM users WHERE pairing_code = ?');
   
   while (true) {
     code = '';
     for (let i = 0; i < 6; i++) {
       code += chars.charAt(Math.floor(Math.random() * chars.length));
     }
+    
     // Verifica se já existe no banco
-    const exists = selectQuery.get(code);
-    if (!exists) break;
+    const res = await pool.query('SELECT 1 FROM users WHERE pairing_code = $1', [code]);
+    if (res.rowCount === 0) break;
   }
   return code;
 }
 
 // REST APIs
 // Registrar um novo usuário
-app.post('/api/register', (req, res) => {
+app.post('/api/register', async (req, res) => {
   try {
     const { username, avatar } = req.body;
     if (!username) {
@@ -90,12 +114,12 @@ app.post('/api/register', (req, res) => {
     }
 
     const id = crypto.randomUUID();
-    const pairingCode = generatePairingCode();
+    const pairingCode = await generatePairingCode();
     
-    const insertUser = db.prepare(
-      'INSERT INTO users (id, username, avatar, pairing_code, paired_user_id) VALUES (?, ?, ?, ?, NULL)'
+    await pool.query(
+      'INSERT INTO users (id, username, avatar, pairing_code, paired_user_id) VALUES ($1, $2, $3, $4, NULL)',
+      [id, username, avatar || 'avatar1', pairingCode]
     );
-    insertUser.run(id, username, avatar || 'avatar1', pairingCode);
 
     res.status(201).json({
       id,
@@ -111,15 +135,15 @@ app.post('/api/register', (req, res) => {
 });
 
 // Login (Obter dados do usuário pelo ID)
-app.post('/api/login', (req, res) => {
+app.post('/api/login', async (req, res) => {
   try {
     const { id } = req.body;
     if (!id) {
       return res.status(400).json({ error: 'ID é obrigatório' });
     }
 
-    const getUser = db.prepare('SELECT * FROM users WHERE id = ?');
-    const user = getUser.get(id);
+    const result = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    const user = result.rows[0];
 
     if (!user) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -133,7 +157,7 @@ app.post('/api/login', (req, res) => {
 });
 
 // Conectar/Parear dois usuários pelo código
-app.post('/api/pair', (req, res) => {
+app.post('/api/pair', async (req, res) => {
   try {
     const { userId, code } = req.body;
     if (!userId || !code) {
@@ -141,8 +165,8 @@ app.post('/api/pair', (req, res) => {
     }
 
     // Buscar o usuário que possui o código
-    const getUserByCode = db.prepare('SELECT * FROM users WHERE pairing_code = ?');
-    const partner = getUserByCode.get(code.toUpperCase().trim());
+    const partnerRes = await pool.query('SELECT * FROM users WHERE pairing_code = $1', [code.toUpperCase().trim()]);
+    const partner = partnerRes.rows[0];
 
     if (!partner) {
       return res.status(404).json({ error: 'Código de pareamento inválido' });
@@ -153,8 +177,8 @@ app.post('/api/pair', (req, res) => {
     }
 
     // Verificar se o parceiro ou o usuário já estão pareados
-    const getUser = db.prepare('SELECT * FROM users WHERE id = ?');
-    const currentUser = getUser.get(userId);
+    const currentUserRes = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    const currentUser = currentUserRes.rows[0];
 
     if (!currentUser) {
       return res.status(404).json({ error: 'Usuário atual não encontrado' });
@@ -164,10 +188,11 @@ app.post('/api/pair', (req, res) => {
       return res.status(400).json({ error: 'Um dos usuários já está pareado com outra pessoa' });
     }
 
-    // Atualizar no banco os IDs de pareamento mútuo
-    const updatePairing = db.prepare('UPDATE users SET paired_user_id = ? WHERE id = ?');
-    updatePairing.run(partner.id, userId);
-    updatePairing.run(userId, partner.id);
+    // Atualizar no banco os IDs de pareamento mútuo (usando transação simples)
+    await pool.query('BEGIN');
+    await pool.query('UPDATE users SET paired_user_id = $1 WHERE id = $2', [partner.id, userId]);
+    await pool.query('UPDATE users SET paired_user_id = $1 WHERE id = $2', [userId, partner.id]);
+    await pool.query('COMMIT');
 
     res.json({
       message: 'Pareamento realizado com sucesso!',
@@ -178,27 +203,30 @@ app.post('/api/pair', (req, res) => {
       }
     });
   } catch (error) {
+    await pool.query('ROLLBACK').catch(() => {});
     console.error('Erro no pareamento:', error);
     res.status(500).json({ error: 'Erro ao realizar pareamento' });
   }
 });
 
 // Desparear
-app.post('/api/unpair', (req, res) => {
+app.post('/api/unpair', async (req, res) => {
   try {
     const { userId } = req.body;
     if (!userId) {
       return res.status(400).json({ error: 'userId é obrigatório' });
     }
 
-    const getUser = db.prepare('SELECT * FROM users WHERE id = ?');
-    const user = getUser.get(userId);
+    const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+    const user = userRes.rows[0];
 
     if (user && user.paired_user_id) {
       const partnerId = user.paired_user_id;
-      const clearPairing = db.prepare('UPDATE users SET paired_user_id = NULL WHERE id = ?');
-      clearPairing.run(userId);
-      clearPairing.run(partnerId);
+      
+      await pool.query('BEGIN');
+      await pool.query('UPDATE users SET paired_user_id = NULL WHERE id = $1', [userId]);
+      await pool.query('UPDATE users SET paired_user_id = NULL WHERE id = $1', [partnerId]);
+      await pool.query('COMMIT');
       
       // Notificar através de WebSocket que foram despareados
       io.to(userId).emit('unpaired');
@@ -207,17 +235,18 @@ app.post('/api/unpair', (req, res) => {
 
     res.json({ message: 'Despareamento realizado' });
   } catch (error) {
+    await pool.query('ROLLBACK').catch(() => {});
     console.error('Erro ao desparear:', error);
     res.status(500).json({ error: 'Erro ao processar despareamento' });
   }
 });
 
 // Obter detalhes de pareamento e parceiro
-app.get('/api/users/:id', (req, res) => {
+app.get('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const getUser = db.prepare('SELECT * FROM users WHERE id = ?');
-    const user = getUser.get(id);
+    const userRes = await pool.query('SELECT * FROM users WHERE id = $1', [id]);
+    const user = userRes.rows[0];
 
     if (!user) {
       return res.status(404).json({ error: 'Usuário não encontrado' });
@@ -225,7 +254,8 @@ app.get('/api/users/:id', (req, res) => {
 
     let partner = null;
     if (user.paired_user_id) {
-      partner = getUser.get(user.paired_user_id);
+      const partnerRes = await pool.query('SELECT * FROM users WHERE id = $1', [user.paired_user_id]);
+      partner = partnerRes.rows[0];
     }
 
     res.json({ user, partner });
@@ -236,34 +266,36 @@ app.get('/api/users/:id', (req, res) => {
 });
 
 // --- LUGARES SALVOS ---
-app.get('/api/places/:userId', (req, res) => {
+app.get('/api/places/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const getPlaces = db.prepare('SELECT * FROM places WHERE user_id = ?');
-    res.json(getPlaces.all(userId));
+    const result = await pool.query('SELECT * FROM places WHERE user_id = $1', [userId]);
+    res.json(result.rows);
   } catch (error) {
     res.status(500).json({ error: 'Erro ao buscar lugares' });
   }
 });
 
-app.post('/api/places', (req, res) => {
+app.post('/api/places', async (req, res) => {
   try {
     const { userId, name, icon, lat, lng } = req.body;
     if (!userId || !name || lat === undefined || lng === undefined) {
       return res.status(400).json({ error: 'userId, name, lat e lng são obrigatórios' });
     }
     const id = crypto.randomUUID();
-    db.prepare('INSERT INTO places (id, user_id, name, icon, lat, lng) VALUES (?, ?, ?, ?, ?, ?)')
-      .run(id, userId, name, icon || '📍', lat, lng);
+    await pool.query(
+      'INSERT INTO places (id, user_id, name, icon, lat, lng) VALUES ($1, $2, $3, $4, $5, $6)',
+      [id, userId, name, icon || '📍', lat, lng]
+    );
     res.status(201).json({ id, userId, name, icon: icon || '📍', lat, lng });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao salvar lugar' });
   }
 });
 
-app.delete('/api/places/:id', (req, res) => {
+app.delete('/api/places/:id', async (req, res) => {
   try {
-    db.prepare('DELETE FROM places WHERE id = ?').run(req.params.id);
+    await pool.query('DELETE FROM places WHERE id = $1', [req.params.id]);
     res.json({ message: 'Lugar removido' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao remover lugar' });
@@ -271,18 +303,17 @@ app.delete('/api/places/:id', (req, res) => {
 });
 
 // Obter histórico de localização recente (últimas 50 posições)
-app.get('/api/history/:userId', (req, res) => {
+app.get('/api/history/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
-    const getHistory = db.prepare(`
+    const result = await pool.query(`
       SELECT latitude, longitude, battery_level, charging, speed, accuracy, status_msg, timestamp
       FROM locations
-      WHERE user_id = ?
+      WHERE user_id = $1
       ORDER BY timestamp DESC
       LIMIT 50
-    `);
-    const history = getHistory.all(userId);
-    res.json(history.reverse()); // Retorna em ordem cronológica
+    `, [userId]);
+    res.json(result.rows.reverse()); // Retorna em ordem cronológica
   } catch (error) {
     console.error('Erro ao buscar histórico:', error);
     res.status(500).json({ error: 'Erro ao buscar histórico' });
@@ -292,10 +323,10 @@ app.get('/api/history/:userId', (req, res) => {
 // Rastreamento de conexões ativas por usuário (userId -> Set de socket.ids)
 const activeConnections = new Map();
 
-function notifyPartnerStatus(userId, isOnline) {
+async function notifyPartnerStatus(userId, isOnline) {
   try {
-    const getUser = db.prepare('SELECT paired_user_id FROM users WHERE id = ?');
-    const user = getUser.get(userId);
+    const res = await pool.query('SELECT paired_user_id FROM users WHERE id = $1', [userId]);
+    const user = res.rows[0];
     if (user && user.paired_user_id) {
       io.to(user.paired_user_id).emit('partner-status-change', {
         userId,
@@ -330,7 +361,7 @@ io.on('connection', (socket) => {
   });
 
   // Atualização de localização recebida
-  socket.on('update-location', (data) => {
+  socket.on('update-location', async (data) => {
     const { userId, latitude, longitude, battery_level, charging, speed, accuracy, status_msg } = data;
     
     if (!userId || latitude === undefined || longitude === undefined) return;
@@ -339,11 +370,10 @@ io.on('connection', (socket) => {
       const now = Date.now();
       
       // Salvar no banco
-      const insertLoc = db.prepare(`
+      await pool.query(`
         INSERT INTO locations (user_id, latitude, longitude, battery_level, charging, speed, accuracy, status_msg, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `);
-      insertLoc.run(
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+      `, [
         userId, 
         latitude, 
         longitude, 
@@ -353,11 +383,11 @@ io.on('connection', (socket) => {
         accuracy ?? null, 
         status_msg ?? null, 
         now
-      );
+      ]);
 
       // Buscar se o usuário possui parceiro
-      const getUser = db.prepare('SELECT paired_user_id FROM users WHERE id = ?');
-      const user = getUser.get(userId);
+      const userRes = await pool.query('SELECT paired_user_id FROM users WHERE id = $1', [userId]);
+      const user = userRes.rows[0];
 
       if (user && user.paired_user_id) {
         // Enviar atualização direta para o parceiro
@@ -379,13 +409,13 @@ io.on('connection', (socket) => {
   });
 
   // Enviar SOS/Alerta
-  socket.on('send-sos', (data) => {
+  socket.on('send-sos', async (data) => {
     const { userId, message } = data;
     if (!userId) return;
 
     try {
-      const getUser = db.prepare('SELECT paired_user_id, username FROM users WHERE id = ?');
-      const user = getUser.get(userId);
+      const userRes = await pool.query('SELECT paired_user_id, username FROM users WHERE id = $1', [userId]);
+      const user = userRes.rows[0];
 
       if (user && user.paired_user_id) {
         io.to(user.paired_user_id).emit('receive-sos', {
@@ -416,14 +446,16 @@ io.on('connection', (socket) => {
 });
 
 // Limpeza automática de localizações com mais de 7 dias
-const cleanOldLocations = db.prepare(
-  'DELETE FROM locations WHERE timestamp < ?'
-);
-setInterval(() => {
-  const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
-  const result = cleanOldLocations.run(cutoff);
-  if (result.changes > 0) {
-    console.log(`[Cleanup] ${result.changes} localizações antigas removidas.`);
+setInterval(async () => {
+  if (!connectionString) return;
+  try {
+    const cutoff = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const res = await pool.query('DELETE FROM locations WHERE timestamp < $1', [cutoff]);
+    if (res.rowCount > 0) {
+      console.log(`[Cleanup] ${res.rowCount} localizações antigas removidas do PostgreSQL.`);
+    }
+  } catch (err) {
+    console.error('[Cleanup] Erro ao limpar localizações antigas:', err);
   }
 }, 60 * 60 * 1000); // Roda a cada 1 hora
 
