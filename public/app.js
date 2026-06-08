@@ -739,7 +739,10 @@ function addPointToRoute(key, latlng) {
   state.routeLines[key].setLatLngs(currentPath);
 }
 
-// --- GEOLOCALIZAÇÃO ---
+// --- GEOLOCALIZAÇÃO COM AUTO-RECUPERAÇÃO E COMPATIBILIDADE iOS/Android ---
+let trackingFallbackInterval = null;
+let lastLocationUpdateTime = 0;
+
 function startLocationTracking() {
   if (!navigator.geolocation) {
     alert('Seu dispositivo não suporta Geolocalização.');
@@ -748,22 +751,115 @@ function startLocationTracking() {
 
   setupBatteryMonitoring();
 
-  const tryWatch = (highAccuracy) => {
-    state.watchId = navigator.geolocation.watchPosition(
-      onLocationSuccess,
-      (err) => {
-        if (highAccuracy && err.code === err.TIMEOUT) {
-          // Fallback para baixa precisão se alta precisão der timeout
-          tryWatch(false);
-        } else {
-          onLocationError(err);
-        }
+  // Função para "acordar" o chip de GPS no iOS e Android
+  const primeGPS = () => {
+    console.log('Iniciando calibração e ativação do GPS...');
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log('GPS inicializado com sucesso.');
+        lastLocationUpdateTime = Date.now();
+        onLocationSuccess(position);
+        setupWatchPosition(true);
       },
-      { enableHighAccuracy: highAccuracy, timeout: 15000, maximumAge: 5000 }
+      (err) => {
+        console.warn('Erro ao inicializar GPS preliminar:', err.code, err.message);
+        // Mesmo falhando na primeira carga (por timeout/indisponibilidade), tenta o watch
+        setupWatchPosition(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
     );
   };
 
-  tryWatch(true);
+  const setupWatchPosition = (highAccuracy) => {
+    if (state.watchId) {
+      navigator.geolocation.clearWatch(state.watchId);
+    }
+
+    state.watchId = navigator.geolocation.watchPosition(
+      (position) => {
+        lastLocationUpdateTime = Date.now();
+        onLocationSuccess(position);
+        
+        // Se o watch está ativo e funcionando, remove o fallback
+        if (trackingFallbackInterval) {
+          clearInterval(trackingFallbackInterval);
+          trackingFallbackInterval = null;
+        }
+      },
+      (err) => {
+        console.warn('Erro no watchPosition do GPS:', err.code, err.message);
+        onLocationError(err);
+        
+        // Se for erro de timeout ou indisponibilidade (e não de permissão recusada), ativa o fallback
+        if (err.code !== 1 && !trackingFallbackInterval) {
+          startFallbackTracking();
+        }
+      },
+      {
+        enableHighAccuracy: highAccuracy,
+        timeout: 12000,
+        maximumAge: 10000
+      }
+    );
+  };
+
+  // Método alternativo de pull periódico para iOS/Safari em segundo plano
+  const startFallbackTracking = () => {
+    if (trackingFallbackInterval) clearInterval(trackingFallbackInterval);
+    
+    console.log('Iniciando rastreamento alternativo (fallback via getCurrentPosition)...');
+    trackingFallbackInterval = setInterval(() => {
+      // Se passaram mais de 15s sem novos dados do GPS, força requisição manual
+      if (Date.now() - lastLocationUpdateTime > 14000) {
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            lastLocationUpdateTime = Date.now();
+            onLocationSuccess(position);
+          },
+          (err) => {
+            console.warn('Falha no fallback de geolocalização:', err.message);
+            onLocationError(err);
+          },
+          { enableHighAccuracy: false, timeout: 8000, maximumAge: 10000 }
+        );
+      }
+    }, 15000);
+  };
+
+  // Inicia o GPS
+  primeGPS();
+
+  // Monitor de recuperação automática (reinicia se ficar inativo por mais de 45 segundos)
+  setInterval(() => {
+    if (state.user && (Date.now() - lastLocationUpdateTime > 45000)) {
+      console.log('GPS inativo por 45s. Reiniciando subsistema de geolocalização...');
+      primeGPS();
+    }
+  }, 30000);
+}
+
+function onLocationError(err) {
+  console.warn('Erro de Geolocalização:', err.code, err.message);
+  const badge = document.getElementById('gps-status-badge');
+  if (!badge) return;
+
+  const msgs = {
+    1: 'Permissão negada',
+    2: 'Sinal GPS fraco',
+    3: 'Buscando GPS'
+  };
+
+  badge.textContent = msgs[err.code] || 'Erro GPS';
+  badge.className = 'status-badge';
+  badge.style.cssText = 'background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.2)';
+
+  if (err.code === 1) {
+    // Avisar apenas uma vez sobre a permissão
+    if (!state.notifiedPermissionError) {
+      state.notifiedPermissionError = true;
+      alert('Permissão de localização negada. Acesse os ajustes do seu celular ou do navegador e ative a localização para este site.');
+    }
+  }
 }
 
 function calcSpeedFromPositions(prevPos, prevTime, currCoords, currTime) {
@@ -820,24 +916,7 @@ function onLocationSuccess(position) {
   }
 }
 
-function onLocationError(err) {
-  console.warn('Erro de Geolocalização:', err.code, err.message);
-  const badge = document.getElementById('gps-status-badge');
 
-  const msgs = {
-    1: 'Permissão negada',
-    2: 'GPS indisponível',
-    3: 'Timeout GPS'
-  };
-
-  badge.textContent = msgs[err.code] || 'Erro GPS';
-  badge.className = 'status-badge';
-  badge.style.cssText = 'background:rgba(239,68,68,0.1);color:var(--red);border:1px solid rgba(239,68,68,0.2)';
-
-  if (err.code === 1) {
-    alert('Permissão de localização negada. Acesse as configurações do navegador e permita o acesso ao GPS.');
-  }
-}
 
 async function setupBatteryMonitoring() {
   if (!navigator.getBattery) return;
