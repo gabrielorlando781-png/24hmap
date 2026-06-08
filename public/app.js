@@ -1138,6 +1138,25 @@ function setupEventListeners() {
     ui.bottomSheet.classList.add('expanded');
     ui.partnerCodeInput.focus();
   });
+
+  // Centralizar mapa ao clicar nos cards dos usuários
+  document.getElementById('user-card-self').addEventListener('click', (e) => {
+    if (e.target.closest('#edit-avatar-btn') || e.target.closest('#edit-photo-input')) return;
+    if (state.markers['self']) {
+      state.map.setView(state.markers['self'].getLatLng(), 16);
+      ui.bottomSheet.classList.remove('expanded');
+      ui.bottomSheet.classList.add('collapsed');
+    }
+  });
+
+  document.getElementById('user-card-partner').addEventListener('click', (e) => {
+    if (e.target.closest('#open-pair-modal-btn')) return;
+    if (state.partner && state.markers['partner']) {
+      state.map.setView(state.markers['partner'].getLatLng(), 16);
+      ui.bottomSheet.classList.remove('expanded');
+      ui.bottomSheet.classList.add('collapsed');
+    }
+  });
 }
 
 // --- INSTALAÇÃO PWA ---
