@@ -1158,9 +1158,63 @@ function setupPWA() {
 }
 
 function requestNotificationPermission() {
-  if ('Notification' in window) {
+  if (!('Notification' in window)) return;
+
+  const showBlockOverlay = () => {
+    if (document.getElementById('notification-blocker')) return;
+
+    const blocker = document.createElement('div');
+    blocker.id = 'notification-blocker';
+    blocker.style.cssText = `
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(9, 9, 11, 0.96);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      z-index: 99999;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 30px;
+      text-align: center;
+      color: #fff;
+    `;
+
+    blocker.innerHTML = `
+      <div style="font-size: 4.5rem; margin-bottom: 24px; animation: pulse-red 2s infinite;">🔔</div>
+      <h2 style="font-size: 1.6rem; font-weight: 700; margin-bottom: 12px; font-family: 'Outfit', sans-serif;">Notificações Necessárias</h2>
+      <p style="font-size: 0.95rem; color: #a1a1aa; max-width: 320px; line-height: 1.6; margin-bottom: 28px; font-family: 'Plus Jakarta Sans', sans-serif;">
+        O 24hApp exige permissão de notificação para alertar você em caso de SOS e atualizações de segurança do seu parceiro.
+      </p>
+      <button id="retry-notification-btn" class="btn btn-primary btn-lg" style="box-shadow: 0 0 20px rgba(139, 92, 246, 0.4); padding: 14px 28px;">
+        Ativar Notificações
+      </button>
+      <p style="font-size: 0.78rem; color: #71717a; margin-top: 20px; max-width: 280px; line-height: 1.4; font-family: 'Plus Jakarta Sans', sans-serif;">
+        Caso já tenha bloqueado nas configurações do navegador, clique no ícone de cadeado ao lado da URL na barra de endereços para liberar o acesso.
+      </p>
+    `;
+
+    document.body.appendChild(blocker);
+
+    document.getElementById('retry-notification-btn').addEventListener('click', () => {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          blocker.remove();
+        } else if (permission === 'denied') {
+          alert('A permissão continua bloqueada. Por favor, libere no ícone de cadeado do seu navegador para usar o app.');
+        }
+      });
+    });
+  };
+
+  if (Notification.permission === 'denied') {
+    showBlockOverlay();
+  } else if (Notification.permission === 'default') {
     Notification.requestPermission().then(permission => {
-      console.log('Permissão de Notificação:', permission);
+      if (permission === 'denied') {
+        showBlockOverlay();
+      }
     });
   }
 }
