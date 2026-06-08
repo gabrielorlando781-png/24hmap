@@ -947,6 +947,261 @@ input:checked + .slider:before {
   font-family: var(--font-family);
 }
 
+/* ---- MEUS LOCAIS ---- */
+.places-section {
+  margin-bottom: 24px;
+}
+
+.places-section h3 {
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.8px;
+  margin-bottom: 12px;
+}
+
+.quick-places {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.quick-place-btn {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  color: var(--text-primary);
+  padding: 7px 12px;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.quick-place-btn:hover {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.places-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.places-empty {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 12px 0;
+}
+
+.place-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+
+.place-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.place-name {
+  flex: 1;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.place-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.place-edit-btn, .place-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 6px;
+  border-radius: 6px;
+  transition: var(--transition);
+  color: var(--text-muted);
+}
+
+.place-edit-btn:hover { background: rgba(139, 92, 246, 0.15); color: var(--primary-light); }
+.place-delete-btn:hover { background: rgba(239, 68, 68, 0.1); color: var(--red); }
+
+/* Marcador no mapa */
+.place-marker-pin {
+  font-size: 1.4rem;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.place-div-icon { background: none; border: none; }
+
+/* Banner de seleção no mapa */
+.map-pick-banner {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(139, 92, 246, 0.9);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  z-index: 1000;
+  pointer-events: none;
+  box-shadow: var(--shadow-lg);
+}
+
+/* ---- MODAL DE LUGAR ---- */
+.emoji-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.emoji-btn {
+  background: var(--bg-primary);
+  border: 2px solid transparent;
+  border-radius: 10px;
+  font-size: 1.3rem;
+  padding: 6px 4px;
+  cursor: pointer;
+  transition: var(--transition);
+  line-height: 1;
+  text-align: center;
+}
+
+.emoji-btn:hover { background: rgba(255,255,255,0.05); }
+.emoji-btn.selected {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.15);
+}
+
+.place-location-options {
+  display: flex;
+  gap: 8px;
+  margin: 8px 0;
+}
+
+.place-location-status {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-primary);
+}
+
+.place-location-status.set {
+  color: var(--emerald);
+  background: rgba(16, 185, 129, 0.08);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.modal-actions .btn {
+  flex: 1;
+  padding: 12px;
+}
+
+/* ---- FOTO DE PERFIL ---- */
+.photo-upload-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 12px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.photo-upload-divider::before,
+.photo-upload-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-glass);
+}
+
+.photo-upload-area {
+  border: 2px dashed var(--border-glass);
+  border-radius: 14px;
+  padding: 16px;
+  cursor: pointer;
+  transition: var(--transition);
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+.photo-upload-area:hover {
+  border-color: var(--primary);
+  background: rgba(139, 92, 246, 0.05);
+}
+
+.photo-preview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.photo-upload-icon { font-size: 1.6rem; }
+
+.photo-preview-empty p {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.photo-preview-img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--primary);
+}
+
+/* Botão editar avatar no card */
+.edit-avatar-btn {
+  position: absolute;
+  bottom: -2px;
+  left: -2px;
+  width: 20px;
+  height: 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: 50%;
+  font-size: 0.6rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  z-index: 2;
+}
+
+.edit-avatar-btn:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+}
+
 .quick-place-btn:hover {
   border-color: var(--primary);
   background: rgba(139, 92, 246, 0.1);

@@ -293,12 +293,37 @@ app.post('/api/places', async (req, res) => {
   }
 });
 
+app.put('/api/places/:id', async (req, res) => {
+  try {
+    const { name, icon } = req.body;
+    if (!name) return res.status(400).json({ error: 'Nome é obrigatório' });
+    await pool.query(
+      'UPDATE places SET name = $1, icon = $2 WHERE id = $3',
+      [name, icon || '📍', req.params.id]
+    );
+    res.json({ message: 'Lugar atualizado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao atualizar lugar' });
+  }
+});
+
 app.delete('/api/places/:id', async (req, res) => {
   try {
     await pool.query('DELETE FROM places WHERE id = $1', [req.params.id]);
     res.json({ message: 'Lugar removido' });
   } catch (error) {
     res.status(500).json({ error: 'Erro ao remover lugar' });
+  }
+});
+
+app.put('/api/users/:id/avatar', async (req, res) => {
+  try {
+    const { avatar } = req.body;
+    if (!avatar) return res.status(400).json({ error: 'Avatar é obrigatório' });
+    await pool.query('UPDATE users SET avatar = $1 WHERE id = $2', [avatar, req.params.id]);
+    res.json({ message: 'Avatar atualizado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao atualizar avatar' });
   }
 });
 

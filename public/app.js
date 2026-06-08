@@ -73,6 +73,8 @@ window.addEventListener('DOMContentLoaded', async () => {
   initMap();
   setupEventListeners();
   setupPWA();
+  initPlaceModal();
+  initPhotoUpload();
   requestNotificationPermission();
   
   const savedUserId = localStorage.getItem('userId');
@@ -148,9 +150,11 @@ ui.saveProfileBtn.addEventListener('click', async () => {
     return;
   }
   
+  const photoPreview = document.getElementById('photo-preview');
+  const uploadedPhoto = photoPreview?.dataset.base64;
   const selectedAvatarOpt = document.querySelector('.avatar-option.selected');
   const avatarSeed = selectedAvatarOpt ? selectedAvatarOpt.dataset.seed : 'cool-fox';
-  const avatarUrl = `https://api.dicebear.com/7.x/bottts/svg?seed=${avatarSeed}`;
+  const avatarUrl = uploadedPhoto || `https://api.dicebear.com/7.x/bottts/svg?seed=${avatarSeed}`;
   
   try {
     const response = await fetch(`${API_URL}/api/register`, {
@@ -217,7 +221,10 @@ function renderPlacesList(places) {
         <div class="place-item">
           <span class="place-icon">${p.icon}</span>
           <span class="place-name">${p.name}</span>
-          <button class="place-delete-btn" data-id="${p.id}">✕</button>
+          <div class="place-actions">
+            <button class="place-edit-btn" data-id="${p.id}" data-name="${p.name}" data-icon="${p.icon}" data-lat="${p.lat}" data-lng="${p.lng}" title="Editar">✏️</button>
+            <button class="place-delete-btn" data-id="${p.id}" title="Remover">✕</button>
+          </div>
         </div>
       `).join('');
 
@@ -227,20 +234,225 @@ function renderPlacesList(places) {
       fetchPlaces();
     });
   });
+
+  list.querySelectorAll('.place-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openPlaceModal({
+        id: btn.dataset.id,
+        name: btn.dataset.name,
+        icon: btn.dataset.icon,
+        lat: parseFloat(btn.dataset.lat),
+        lng: parseFloat(btn.dataset.lng)
+      });
+    });
+  });
 }
 
-async function saveCurrentLocationAsPlace(name, icon) {
-  if (!state.lastPosition) {
-    alert('Aguardando GPS. Tente novamente em instantes.');
-    return;
+// --- MODAL DE LUGAR ---
+let placeModalState = { id: null, lat: null, lng: null, pickingOnMap: false };
+
+function openPlaceModal(existing = null) {
+  placeModalState = { id: null, lat: null, lng: null, pickingOnMap: false };
+
+  const modal = document.getElementById('place-modal');
+  const title = document.getElementById('place-modal-title');
+  const nameInput = document.getElementById('place-name-input');
+  const locStatus = document.getElementById('place-location-status');
+
+  document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+  document.querySelector('.emoji-btn[data-emoji="📍"]').classList.add('selected');
+
+  if (existing) {
+    placeModalState.id = existing.id;
+    placeModalState.lat = existing.lat;
+    placeModalState.lng = existing.lng;
+    title.textContent = 'Editar Local';
+    nameInput.value = existing.name;
+    locStatus.textContent = `📌 Local salvo (${existing.lat.toFixed(4)}, ${existing.lng.toFixed(4)})`;
+    locStatus.className = 'place-location-status set';
+    const emojiBtn = document.querySelector(`.emoji-btn[data-emoji="${existing.icon}"]`);
+    if (emojiBtn) {
+      document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+      emojiBtn.classList.add('selected');
+    }
+  } else {
+    title.textContent = 'Adicionar Local';
+    nameInput.value = '';
+    locStatus.textContent = 'Nenhuma localização selecionada';
+    locStatus.className = 'place-location-status';
   }
-  const { latitude: lat, longitude: lng } = state.lastPosition.coords;
-  await fetch(`${API_URL}/api/places`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ userId: state.user.id, name, icon, lat, lng })
+
+  modal.classList.remove('hidden');
+}
+
+function initPlaceModal() {
+  const modal = document.getElementById('place-modal');
+
+  document.querySelectorAll('.emoji-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+    });
   });
-  fetchPlaces();
+
+  document.getElementById('use-current-loc-btn').addEventListener('click', () => {
+    if (!state.lastPosition) {
+      alert('Aguardando GPS. Tente novamente em instantes.');
+      return;
+    }
+    placeModalState.lat = state.lastPosition.coords.latitude;
+    placeModalState.lng = state.lastPosition.coords.longitude;
+    const status = document.getElementById('place-location-status');
+    status.textContent = `✅ Localização atual capturada`;
+    status.className = 'place-location-status set';
+  });
+
+  document.getElementById('pick-on-map-btn').addEventListener('click', () => {
+    modal.classList.add('hidden');
+    placeModalState.pickingOnMap = true;
+    const banner = document.createElement('div');
+    banner.id = 'map-pick-banner';
+    banner.className = 'map-pick-banner';
+    banner.textContent = '📍 Toque no mapa para marcar o local';
+    document.getElementById('map-container').appendChild(banner);
+    state.map.once('click', (e) => {
+      placeModalState.lat = e.latlng.lat;
+      placeModalState.lng = e.latlng.lng;
+      placeModalState.pickingOnMap = false;
+      banner.remove();
+      const status = document.getElementById('place-location-status');
+      status.textContent = `✅ Local marcado no mapa`;
+      status.className = 'place-location-status set';
+      modal.classList.remove('hidden');
+    });
+  });
+
+  document.getElementById('cancel-place-btn').addEventListener('click', () => {
+    modal.classList.add('hidden');
+    document.getElementById('map-pick-banner')?.remove();
+  });
+
+  document.getElementById('save-place-btn').addEventListener('click', async () => {
+    const name = document.getElementById('place-name-input').value.trim();
+    const icon = document.querySelector('.emoji-btn.selected')?.dataset.emoji || '📍';
+
+    if (!name) { alert('Dê um nome ao local.'); return; }
+    if (placeModalState.lat === null) { alert('Selecione uma localização.'); return; }
+
+    const btn = document.getElementById('save-place-btn');
+    btn.textContent = 'Salvando...';
+    btn.disabled = true;
+
+    try {
+      if (placeModalState.id) {
+        await fetch(`${API_URL}/api/places/${placeModalState.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, icon })
+        });
+      } else {
+        await fetch(`${API_URL}/api/places`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: state.user.id, name, icon, lat: placeModalState.lat, lng: placeModalState.lng })
+        });
+      }
+      modal.classList.add('hidden');
+      fetchPlaces();
+    } catch (err) {
+      alert('Erro ao salvar local.');
+    } finally {
+      btn.textContent = 'Salvar Local';
+      btn.disabled = false;
+    }
+  });
+
+  // Botões rápidos de lugar
+  document.querySelectorAll('.quick-place-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openPlaceModal(null);
+      document.getElementById('place-name-input').value = btn.dataset.name;
+      const emojiBtn = document.querySelector(`.emoji-btn[data-emoji="${btn.dataset.icon}"]`);
+      if (emojiBtn) {
+        document.querySelectorAll('.emoji-btn').forEach(b => b.classList.remove('selected'));
+        emojiBtn.classList.add('selected');
+      }
+    });
+  });
+
+  document.getElementById('place-modal').addEventListener('click', (e) => {
+    if (e.target === document.getElementById('place-modal')) {
+      document.getElementById('place-modal').classList.add('hidden');
+    }
+  });
+}
+
+// --- FOTO DE PERFIL ---
+function resizeImageToBase64(file, maxSize = 256) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const ratio = Math.min(maxSize / img.width, maxSize / img.height);
+        canvas.width = img.width * ratio;
+        canvas.height = img.height * ratio;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function initPhotoUpload() {
+  // No modal de registro
+  const uploadArea = document.getElementById('photo-upload-area');
+  const photoInput = document.getElementById('profile-photo-input');
+  const photoPreview = document.getElementById('photo-preview');
+
+  uploadArea?.addEventListener('click', () => photoInput.click());
+
+  photoInput?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const base64 = await resizeImageToBase64(file);
+    photoPreview.innerHTML = `<img src="${base64}" class="photo-preview-img" alt="Foto">`;
+    photoPreview.dataset.base64 = base64;
+    // Deselecionar avatares ao escolher foto
+    document.querySelectorAll('.avatar-option').forEach(o => o.classList.remove('selected'));
+  });
+
+  // No card de perfil (editar foto existente)
+  const editAvatarBtn = document.getElementById('edit-avatar-btn');
+  const editPhotoInput = document.getElementById('edit-photo-input');
+
+  editAvatarBtn?.addEventListener('click', () => editPhotoInput.click());
+
+  editPhotoInput?.addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file || !state.user) return;
+    const base64 = await resizeImageToBase64(file);
+    try {
+      await fetch(`${API_URL}/api/users/${state.user.id}/avatar`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ avatar: base64 })
+      });
+      state.user.avatar = base64;
+      localStorage.setItem('cached_user', JSON.stringify(state.user));
+      updateSelfUI();
+      if (state.markers['self']) updateMapMarker('self',
+        state.markers['self'].getLatLng(),
+        base64, state.user.username
+      );
+    } catch (err) {
+      alert('Erro ao atualizar foto.');
+    }
+  });
 }
 
 // Buscar informações do círculo de pareamento

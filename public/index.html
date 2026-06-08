@@ -77,6 +77,8 @@
             <div class="avatar-wrapper">
               <img id="self-avatar" src="https://api.dicebear.com/7.x/bottts/svg?seed=user1" alt="Avatar">
               <span class="status-indicator online"></span>
+              <button id="edit-avatar-btn" class="edit-avatar-btn" title="Trocar foto">✏️</button>
+              <input type="file" id="edit-photo-input" accept="image/*" hidden>
             </div>
             <div class="user-details">
               <h3 id="self-name">Você</h3>
@@ -235,6 +237,15 @@
           </div>
         </div>
 
+        <div class="photo-upload-divider"><span>ou use uma foto sua</span></div>
+        <div class="photo-upload-area" id="photo-upload-area">
+          <input type="file" id="profile-photo-input" accept="image/*" hidden>
+          <div id="photo-preview" class="photo-preview-empty">
+            <span class="photo-upload-icon">📷</span>
+            <p>Toque para enviar foto da galeria</p>
+          </div>
+        </div>
+
         <button id="save-profile-btn" class="btn btn-primary btn-block btn-lg">Começar a Rastrear</button>
       </div>
     </div>
@@ -278,6 +289,54 @@
         </div>
         
         <button id="close-help-btn" class="btn btn-secondary btn-block">Entendi</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Adicionar/Editar Lugar -->
+  <div id="place-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h2 id="place-modal-title">Adicionar Local</h2>
+        <p>Escolha um ícone e dê um nome ao local</p>
+      </div>
+      <div class="modal-body">
+        <label>Ícone</label>
+        <div class="emoji-picker-grid">
+          <button class="emoji-btn selected" data-emoji="📍">📍</button>
+          <button class="emoji-btn" data-emoji="🏠">🏠</button>
+          <button class="emoji-btn" data-emoji="💼">💼</button>
+          <button class="emoji-btn" data-emoji="🏫">🏫</button>
+          <button class="emoji-btn" data-emoji="🏥">🏥</button>
+          <button class="emoji-btn" data-emoji="🏋️">🏋️</button>
+          <button class="emoji-btn" data-emoji="🛒">🛒</button>
+          <button class="emoji-btn" data-emoji="🍕">🍕</button>
+          <button class="emoji-btn" data-emoji="⛪">⛪</button>
+          <button class="emoji-btn" data-emoji="🌳">🌳</button>
+          <button class="emoji-btn" data-emoji="🏖️">🏖️</button>
+          <button class="emoji-btn" data-emoji="🎮">🎮</button>
+          <button class="emoji-btn" data-emoji="⭐">⭐</button>
+          <button class="emoji-btn" data-emoji="❤️">❤️</button>
+          <button class="emoji-btn" data-emoji="🏨">🏨</button>
+          <button class="emoji-btn" data-emoji="⛽">⛽</button>
+        </div>
+
+        <div class="form-group" style="margin-top:16px">
+          <label for="place-name-input">Nome do Local</label>
+          <input type="text" id="place-name-input" placeholder="Ex: Minha Casa, Trabalho...">
+        </div>
+
+        <label>Localização</label>
+        <div class="place-location-options">
+          <button id="use-current-loc-btn" class="btn btn-secondary btn-sm">📍 Localização atual</button>
+          <button id="pick-on-map-btn" class="btn btn-secondary btn-sm">🗺️ Marcar no mapa</button>
+        </div>
+        <div id="place-location-status" class="place-location-status">Nenhuma localização selecionada</div>
+
+        <div class="modal-actions">
+          <button id="cancel-place-btn" class="btn btn-secondary">Cancelar</button>
+          <button id="save-place-btn" class="btn btn-primary">Salvar Local</button>
+        </div>
       </div>
     </div>
   </div>
