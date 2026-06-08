@@ -387,6 +387,20 @@
     </div>
   </div>
 
+  <!-- Floating Follow Indicator -->
+  <div id="follow-indicator" class="follow-indicator hidden">
+    <span class="follow-dot"></span>
+    <span>Seguindo Parceiro</span>
+    <button id="stop-follow-btn" class="stop-follow-btn">✕</button>
+  </div>
+
+  <!-- Floating Minimal Sync Toast -->
+  <div id="sync-toast" class="sync-toast hidden">
+    <span class="sync-icon">🔄</span>
+    <span>Recarregue o app para sincronizar tudo</span>
+    <button onclick="window.location.reload()" class="sync-reload-btn">Recarregar</button>
+  </div>
+
   <!-- JS Scripts -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>

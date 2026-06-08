@@ -14,7 +14,10 @@ let state = {
   lastPositionTime: null,
   currentStatusEmoji: '📍',
   currentStatusText: 'Ativo',
-  battery: { level: null, charging: false }
+  battery: { level: null, charging: false },
+  followPartner: false,
+  partnerPlaces: [],
+  hasCenteredOnPartner: false
 };
 
 // Configurações
@@ -187,29 +190,56 @@ async function fetchPlaces() {
   try {
     const res = await fetch(`${API_URL}/api/places/${state.user.id}`);
     const places = await res.json();
-    renderPlacesOnMap(places);
+    
+    let partnerPlaces = [];
+    if (state.partner) {
+      try {
+        const partnerRes = await fetch(`${API_URL}/api/places/${state.partner.id}`);
+        partnerPlaces = await partnerRes.json();
+        state.partnerPlaces = partnerPlaces;
+      } catch (errPartner) {
+        console.warn('Erro ao buscar lugares do parceiro:', errPartner);
+      }
+    }
+    
+    renderPlacesOnMap(places, partnerPlaces);
     renderPlacesList(places);
   } catch (err) {
     console.error('Erro ao buscar lugares:', err);
   }
 }
 
-function renderPlacesOnMap(places) {
+function renderPlacesOnMap(places, partnerPlaces = []) {
   // Remove marcadores antigos
   Object.values(state.placeMarkers).forEach(m => state.map.removeLayer(m));
   state.placeMarkers = {};
 
+  // Renderizar locais do próprio usuário (Violeta/Normal)
   places.forEach(place => {
     const icon = L.divIcon({
-      html: `<div class="place-marker-pin">${place.icon}</div>`,
+      html: `<div class="place-marker-pin" style="border-color: var(--primary);">${place.icon}</div>`,
       className: 'place-div-icon',
       iconSize: [36, 36],
       iconAnchor: [18, 36],
       popupAnchor: [0, -38]
     });
     const marker = L.marker([place.lat, place.lng], { icon }).addTo(state.map);
-    marker.bindPopup(`<strong style="color:#c084fc">${place.icon} ${place.name}</strong>`);
+    marker.bindPopup(`<div style="text-align: center; color: #fff; font-family: sans-serif;"><strong style="color:var(--primary-light)">${place.icon} ${place.name}</strong><br><span style="font-size:0.75rem;color:var(--text-secondary)">Seu Local Salvo</span></div>`);
     state.placeMarkers[place.id] = marker;
+  });
+
+  // Renderizar locais do parceiro (Esmeralda/Verde)
+  partnerPlaces.forEach(place => {
+    const icon = L.divIcon({
+      html: `<div class="place-marker-pin" style="border-color: var(--emerald);">${place.icon}</div>`,
+      className: 'place-div-icon',
+      iconSize: [36, 36],
+      iconAnchor: [18, 36],
+      popupAnchor: [0, -38]
+    });
+    const marker = L.marker([place.lat, place.lng], { icon }).addTo(state.map);
+    marker.bindPopup(`<div style="text-align: center; color: #fff; font-family: sans-serif;"><strong style="color:var(--emerald)">${place.icon} ${place.name}</strong><br><span style="font-size:0.75rem;color:var(--text-secondary)">Local de ${state.partner.username}</span></div>`);
+    state.placeMarkers['partner_' + place.id] = marker;
   });
 }
 
@@ -233,6 +263,7 @@ function renderPlacesList(places) {
     btn.addEventListener('click', async () => {
       await fetch(`${API_URL}/api/places/${btn.dataset.id}`, { method: 'DELETE' });
       fetchPlaces();
+      showSyncWarning();
     });
   });
 
@@ -360,6 +391,7 @@ function initPlaceModal() {
       }
       modal.classList.add('hidden');
       fetchPlaces();
+      showSyncWarning();
     } catch (err) {
       alert('Erro ao salvar local.');
     } finally {
@@ -450,6 +482,7 @@ function initPhotoUpload() {
         state.markers['self'].getLatLng(),
         base64, state.user.username
       );
+      showSyncWarning();
     } catch (err) {
       alert('Erro ao atualizar foto.');
     }
@@ -569,6 +602,11 @@ function initSocket() {
     // Atualizar marcador no mapa
     updateMapMarker('partner', [data.latitude, data.longitude], state.partner.avatar, state.partner.username, data);
     
+    // Centralizar no parceiro em movimento se o modo seguir estiver ligado
+    if (state.followPartner) {
+      state.map.setView([data.latitude, data.longitude]);
+    }
+
     // Adicionar ponto ao histórico da rota em tempo real
     addPointToRoute('partner', [data.latitude, data.longitude]);
   });
@@ -612,6 +650,13 @@ function initMap() {
     maxZoom: 19
   }).addTo(state.map);
   
+  // Parar de seguir automaticamente se o usuário arrastar o mapa manualmente
+  state.map.on('movestart', (e) => {
+    if (e.originalEvent) {
+      stopFollowingPartner();
+    }
+  });
+
   // Ajusta tamanho do mapa
   setTimeout(() => {
     state.map.invalidateSize();
@@ -664,6 +709,13 @@ function updateMapMarker(key, latlng, avatar, username, meta = {}) {
     state.markers[key] = L.marker(latlng, { icon: customIcon }).addTo(state.map);
     state.markers[key].bindPopup(popupContent);
     
+    // Configurar clique no marcador do parceiro para atuar como modo seguir
+    state.markers[key].on('click', () => {
+      if (key === 'partner') {
+        startFollowingPartner();
+      }
+    });
+
     // Na primeira carga de qualquer marcador, ajusta o zoom
     fitMapBounds();
   }
@@ -705,6 +757,12 @@ async function fetchHistory(userId, key) {
     
     updateMapMarker(key, [latest.latitude, latest.longitude], avatar, name, latest);
     
+    // Focar e seguir o parceiro logo no carregamento inicial (se houver histórico)
+    if (key === 'partner' && !state.hasCenteredOnPartner) {
+      state.hasCenteredOnPartner = true;
+      startFollowingPartner([latest.latitude, latest.longitude]);
+    }
+
     // Desenhar polilinhas
     drawRouteLine(key, latlngs);
   } catch (err) {
@@ -1125,6 +1183,7 @@ function setupEventListeners() {
 
       ui.partnerCodeInput.value = '';
       await fetchCircleDetails();
+      showSyncWarning();
     } catch (err) {
       console.error(err);
       alert('Erro ao realizar pareamento');
@@ -1152,6 +1211,7 @@ function setupEventListeners() {
         state.partnerOnline = false;
         updateSelfUI();
         updatePartnerUI();
+        showSyncWarning();
       }
     } catch (err) {
       console.error(err);
@@ -1231,10 +1291,16 @@ function setupEventListeners() {
   document.getElementById('user-card-partner').addEventListener('click', (e) => {
     if (e.target.closest('#open-pair-modal-btn')) return;
     if (state.partner && state.markers['partner']) {
-      state.map.setView(state.markers['partner'].getLatLng(), 16);
+      startFollowingPartner();
       ui.bottomSheet.classList.remove('expanded');
       ui.bottomSheet.classList.add('collapsed');
     }
+  });
+
+  // Parar de seguir parceiro manualmente
+  document.getElementById('stop-follow-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    stopFollowingPartner();
   });
 }
 
@@ -1319,17 +1385,59 @@ function requestNotificationPermission() {
     });
   };
 
-  if (Notification.permission === 'denied') {
-    showBlockOverlay();
-  } else if (Notification.permission === 'default') {
-    Notification.requestPermission().then(permission => {
-      if (permission === 'denied') {
-        showBlockOverlay();
-      }
-    });
+    if (Notification.permission === 'denied') {
+      showBlockOverlay();
+    } else if (Notification.permission === 'default') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'denied') {
+          showBlockOverlay();
+        }
+      });
+    }
   }
 }
 
+// --- CONTROLES DO MODO SEGUIR E SINCRONIZAÇÃO ---
+function startFollowingPartner(latlng) {
+  if (!state.map) return;
+  state.followPartner = true;
+  
+  let targetLatLng = latlng;
+  if (!targetLatLng && state.markers['partner']) {
+    targetLatLng = state.markers['partner'].getLatLng();
+  }
+  
+  if (targetLatLng) {
+    state.map.setView(targetLatLng, 16);
+    // Abre popup de informações automaticamente
+    state.markers['partner'].openPopup();
+  }
+  
+  updateFollowIndicator();
+}
+
+function stopFollowingPartner() {
+  state.followPartner = false;
+  updateFollowIndicator();
+}
+
+function updateFollowIndicator() {
+  const indicator = document.getElementById('follow-indicator');
+  if (!indicator) return;
+  
+  if (state.followPartner && state.partner) {
+    indicator.classList.remove('hidden');
+  } else {
+    indicator.classList.add('hidden');
+  }
+}
+
+function showSyncWarning() {
+  const toast = document.getElementById('sync-toast');
+  if (toast) {
+    toast.classList.remove('hidden');
+  }
+}
 // --- LOUSA DO CASAL (DESENHO E NOTIFICAÇÕES) ---
 let currentNotificationTimestamp = null;
 
