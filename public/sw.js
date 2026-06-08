@@ -5,6 +5,7 @@ const ASSETS = [
   '/styles.css',
   '/app.js',
   '/manifest.json',
+  '/logo.png',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js',
   'https://cdn.socket.io/4.7.5/socket.io.min.js'
@@ -81,8 +82,8 @@ self.addEventListener('push', (e) => {
 
   const options = {
     body: data.body,
-    icon: 'https://cdn-icons-png.flaticon.com/512/854/854878.png',
-    badge: 'https://cdn-icons-png.flaticon.com/512/854/854878.png',
+    icon: '/logo.png',
+    badge: '/logo.png',
     vibrate: [100, 50, 100],
     data: {
       dateOfArrival: Date.now(),
