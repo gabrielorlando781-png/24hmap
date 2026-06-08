@@ -78,6 +78,13 @@ async function initDatabase() {
         timestamp BIGINT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS drawings (
+        user_id TEXT PRIMARY KEY,
+        image_data TEXT NOT NULL,
+        timestamp BIGINT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
     `);
     console.log('✅ Banco de dados PostgreSQL (Supabase) inicializado com sucesso.');
   } catch (err) {
@@ -327,6 +334,23 @@ app.put('/api/users/:id/avatar', async (req, res) => {
   }
 });
 
+// Obter desenho mais recente do parceiro
+app.get('/api/drawings/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const userRes = await pool.query('SELECT paired_user_id FROM users WHERE id = $1', [userId]);
+    const user = userRes.rows[0];
+    if (user && user.paired_user_id) {
+      const drawRes = await pool.query('SELECT * FROM drawings WHERE user_id = $1', [user.paired_user_id]);
+      return res.json(drawRes.rows[0] || null);
+    }
+    res.json(null);
+  } catch (err) {
+    console.error('Erro ao carregar desenho:', err);
+    res.status(500).json({ error: 'Erro ao carregar desenho' });
+  }
+});
+
 // Obter histórico de localização recente (últimas 50 posições)
 app.get('/api/history/:userId', async (req, res) => {
   try {
@@ -451,6 +475,35 @@ io.on('connection', (socket) => {
       }
     } catch (err) {
       console.error('Erro ao processar SOS:', err);
+    }
+  });
+
+  // Enviar Desenho
+  socket.on('send-drawing', async (data) => {
+    const { userId, imageData } = data;
+    if (!userId || !imageData) return;
+
+    try {
+      const now = Date.now();
+      // Salvar desenho (cada usuário tem um slot correspondente ao seu ID)
+      await pool.query(
+        'INSERT INTO drawings (user_id, image_data, timestamp) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET image_data = $2, timestamp = $3',
+        [userId, imageData, now]
+      );
+
+      const userRes = await pool.query('SELECT paired_user_id, username FROM users WHERE id = $1', [userId]);
+      const user = userRes.rows[0];
+
+      if (user && user.paired_user_id) {
+        // Enviar atualização direta para o parceiro
+        io.to(user.paired_user_id).emit('receive-drawing', {
+          senderName: user.username,
+          imageData,
+          timestamp: now
+        });
+      }
+    } catch (err) {
+      console.error('Erro ao processar envio de desenho:', err);
     }
   });
 

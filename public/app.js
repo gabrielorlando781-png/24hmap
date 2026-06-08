@@ -76,6 +76,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   initPlaceModal();
   initPhotoUpload();
   requestNotificationPermission();
+  initDrawingBoard();
   
   const savedUserId = localStorage.getItem('userId');
   if (savedUserId) {
@@ -480,6 +481,8 @@ async function fetchCircleDetails() {
       fetchHistory(state.partner.id, 'partner');
       // Carregar seu próprio histórico
       fetchHistory(state.user.id, 'self');
+      // Verificar se há desenhos novos do parceiro
+      checkPartnerDrawings();
     }
   } catch (err) {
     console.error('Erro ao carregar círculo:', err);
@@ -580,6 +583,11 @@ function initSocket() {
   // Recebe SOS
   state.socket.on('receive-sos', (data) => {
     showSOSAlert(data.senderName, data.message);
+  });
+
+  // Recebe Desenho em Tempo Real
+  state.socket.on('receive-drawing', (data) => {
+    showDrawingNotification(data.senderName, data.imageData, data.timestamp);
   });
   
   // Recebe despareamento
@@ -932,10 +940,15 @@ ui.wakeLockToggle.addEventListener('change', (e) => {
   }
 });
 
-// Re-requisitar lock se o app voltar de minimizado
+// Re-requisitar lock e buscar desenhos se o app voltar de minimizado
 document.addEventListener('visibilitychange', () => {
-  if (state.wakeLock !== null && document.visibilityState === 'visible') {
-    requestWakeLock();
+  if (document.visibilityState === 'visible') {
+    if (state.wakeLock !== null) {
+      requestWakeLock();
+    }
+    if (state.user && state.partner) {
+      checkPartnerDrawings();
+    }
   }
 });
 
@@ -1216,5 +1229,215 @@ function requestNotificationPermission() {
         showBlockOverlay();
       }
     });
+  }
+}
+
+// --- LOUSA DO CASAL (DESENHO E NOTIFICAÇÕES) ---
+let currentNotificationTimestamp = null;
+
+function initDrawingBoard() {
+  const canvas = document.getElementById('drawing-canvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  let isDrawing = false;
+  let currentColor = '#8b5cf6'; // Violeta padrão
+  let lastX = 0;
+  let lastY = 0;
+
+  // Configurar traçado suave e sombra neon
+  const setupContext = () => {
+    ctx.strokeStyle = currentColor;
+    ctx.lineWidth = 4;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.shadowColor = currentColor;
+    ctx.shadowBlur = 10;
+  };
+  setupContext();
+
+  // Mapear coordenadas considerando escala responsiva do Canvas
+  function getCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    let clientX, clientY;
+    
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    }
+    
+    return {
+      x: ((clientX - rect.left) / rect.width) * canvas.width,
+      y: ((clientY - rect.top) / rect.height) * canvas.height
+    };
+  }
+
+  // Eventos Mouse
+  canvas.addEventListener('mousedown', (e) => {
+    isDrawing = true;
+    const { x, y } = getCoords(e);
+    lastX = x;
+    lastY = y;
+  });
+
+  canvas.addEventListener('mousemove', (e) => {
+    if (!isDrawing) return;
+    const { x, y } = getCoords(e);
+    
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    
+    lastX = x;
+    lastY = y;
+  });
+
+  canvas.addEventListener('mouseup', () => isDrawing = false);
+  canvas.addEventListener('mouseleave', () => isDrawing = false);
+
+  // Eventos Toque (Celular)
+  canvas.addEventListener('touchstart', (e) => {
+    isDrawing = true;
+    const { x, y } = getCoords(e);
+    lastX = x;
+    lastY = y;
+  });
+
+  canvas.addEventListener('touchmove', (e) => {
+    if (!isDrawing) return;
+    const { x, y } = getCoords(e);
+    
+    ctx.beginPath();
+    ctx.moveTo(lastX, lastY);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    
+    lastX = x;
+    lastY = y;
+  });
+
+  canvas.addEventListener('touchend', () => isDrawing = false);
+
+  // Seletores de Cores
+  const colorBtns = document.querySelectorAll('.color-btn');
+  colorBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      colorBtns.forEach(b => b.classList.remove('selected'));
+      btn.classList.add('selected');
+      currentColor = btn.dataset.color;
+      setupContext();
+    });
+  });
+
+  // Limpar Canvas
+  const clearBtn = document.getElementById('clear-canvas-btn');
+  clearBtn?.addEventListener('click', () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+  });
+
+  // Botão Enviar Desenho
+  const sendBtn = document.getElementById('send-drawing-btn');
+  sendBtn?.addEventListener('click', () => {
+    if (!state.partner) {
+      alert('Você precisa parear com seu parceiro primeiro para enviar um desenho!');
+      return;
+    }
+
+    // Verificar se o canvas está vazio
+    const buffer = new Uint32Array(ctx.getImageData(0, 0, canvas.width, canvas.height).data.buffer);
+    const hasDrawing = buffer.some(color => color !== 0);
+    if (!hasDrawing) {
+      alert('Desenhe algo na lousa antes de enviar!');
+      return;
+    }
+
+    if (state.socket && state.socket.connected) {
+      const imageData = canvas.toDataURL('image/png');
+      state.socket.emit('send-drawing', {
+        userId: state.user.id,
+        imageData
+      });
+      alert('Desenho enviado para seu parceiro com sucesso! 🎨');
+    } else {
+      alert('Erro de conexão. Verifique sua rede e tente novamente.');
+    }
+  });
+
+  // Bind para fechar modal de notificação
+  const closeDrawingModalBtn = document.getElementById('close-drawing-modal-btn');
+  closeDrawingModalBtn?.addEventListener('click', () => {
+    const modal = document.getElementById('drawing-notification-modal');
+    modal.classList.add('hidden');
+    if (currentNotificationTimestamp) {
+      localStorage.setItem('last_viewed_drawing_timestamp', currentNotificationTimestamp);
+    }
+  });
+}
+
+function showDrawingNotification(senderName, imageData, timestamp) {
+  const modal = document.getElementById('drawing-notification-modal');
+  const senderNameEl = document.getElementById('drawing-sender-name');
+  const imgEl = document.getElementById('received-drawing-img');
+
+  if (!modal || !senderNameEl || !imgEl) return;
+
+  currentNotificationTimestamp = timestamp;
+  senderNameEl.textContent = senderName;
+  imgEl.src = imageData;
+  modal.classList.remove('hidden');
+
+  // Som de sino romântico
+  playRomanticAlertSound();
+}
+
+async function checkPartnerDrawings() {
+  if (!state.user || !state.partner) return;
+  try {
+    const response = await fetch(`${API_URL}/api/drawings/${state.user.id}`);
+    if (!response.ok) return;
+    const drawing = await response.json();
+    if (drawing) {
+      const lastViewed = localStorage.getItem('last_viewed_drawing_timestamp');
+      if (!lastViewed || Number(drawing.timestamp) > Number(lastViewed)) {
+        showDrawingNotification(state.partner.username, drawing.image_data, drawing.timestamp);
+      }
+    }
+  } catch (err) {
+    console.error('Erro ao verificar desenhos pendentes:', err);
+  }
+}
+
+function playRomanticAlertSound() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const playTone = (freq, startTime, duration) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, startTime);
+      
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(0.3, startTime + 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.start(startTime);
+      osc.stop(startTime + duration);
+    };
+
+    const now = ctx.currentTime;
+    playTone(523.25, now, 0.8);      // C5
+    playTone(659.25, now + 0.15, 0.8); // E5
+    playTone(783.99, now + 0.30, 0.8); // G5
+    playTone(1046.50, now + 0.45, 1.2); // C6
+  } catch (e) {
+    console.warn('Falha ao tocar som romântico:', e);
   }
 }

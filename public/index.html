@@ -152,6 +152,31 @@
           <div id="places-list" class="places-list"></div>
         </div>
 
+        <!-- Lousa do Casal -->
+        <div class="places-section" id="drawing-section-view">
+          <div class="settings-header">
+            <h3>Lousa do Casal</h3>
+          </div>
+          <p class="pairing-desc" style="margin-bottom: 12px;">Desenhe algo fofo ou envie um recado neon em tempo real para seu parceiro!</p>
+          
+          <div class="canvas-container">
+            <canvas id="drawing-canvas" width="300" height="200"></canvas>
+            <div class="canvas-controls">
+              <div class="color-picker">
+                <button class="color-btn selected" data-color="#8b5cf6" style="background:#8b5cf6"></button>
+                <button class="color-btn" data-color="#10b981" style="background:#10b981"></button>
+                <button class="color-btn" data-color="#ec4899" style="background:#ec4899"></button>
+                <button class="color-btn" data-color="#f59e0b" style="background:#f59e0b"></button>
+                <button class="color-btn" data-color="#ffffff" style="background:#ffffff"></button>
+              </div>
+              <button id="clear-canvas-btn" class="btn btn-secondary btn-sm">Limpar</button>
+            </div>
+          </div>
+          <button id="send-drawing-btn" class="btn btn-primary btn-block" style="margin-top: 12px; padding: 12px;">
+            🎨 Enviar Desenho/Cartão
+          </button>
+        </div>
+
         <!-- Settings & Connections Tab -->
         <div class="settings-section">
           <div class="settings-header">
@@ -337,6 +362,25 @@
           <button id="cancel-place-btn" class="btn btn-secondary">Cancelar</button>
           <button id="save-place-btn" class="btn btn-primary">Salvar Local</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Novo Desenho/Cartão Recebido -->
+  <div id="drawing-notification-modal" class="modal-overlay hidden">
+    <div class="modal-card" style="max-width: 380px; text-align: center;">
+      <div class="modal-header">
+        <div style="font-size: 3rem; margin-bottom: 10px; animation: heartbeat 1s infinite alternate;">❤️</div>
+        <h2>Novo Cartão Recebido!</h2>
+        <p>Seu parceiro <strong id="drawing-sender-name"></strong> te enviou um desenho especial:</p>
+      </div>
+      <div class="modal-body" style="padding-top: 10px;">
+        <div class="received-drawing-container">
+          <img id="received-drawing-img" src="" alt="Desenho recebido" style="width: 100%; border-radius: 12px; border: 1px solid var(--border-glass); background: #000; display: block; box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);">
+        </div>
+        <button id="close-drawing-modal-btn" class="btn btn-primary btn-block btn-lg" style="margin-top: 20px;">
+          Amei! ❤️
+        </button>
       </div>
     </div>
   </div>
